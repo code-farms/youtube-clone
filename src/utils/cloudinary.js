@@ -15,7 +15,7 @@ const uploadOnCloudinary = async (localFilePath) => {
       resource_type: "auto",
     });
     console.log("File has uploaded successfully");
-    console.log(response);
+    fs.unlinkSync(localFilePath);
     return response;
   } catch (error) {
     // Remove the file from the locally saved file as the upload operation failed
