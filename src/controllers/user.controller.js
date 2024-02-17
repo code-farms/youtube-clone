@@ -4,6 +4,21 @@ import { uploadOnCloudinary } from "../utils/cloudinary.js";
 import { ApiResponse } from "../utils/apiResponse.js";
 import { ApiError } from "../utils/ApiError.js";
 
+const generateAccesssAndRefreshTokens = async (userId) => {
+  try {
+    const user = await User.findById(userId);
+    const accessToken = user.generateAccessToken();
+    const refreshToken = user.generateRefreshToken();
+
+    user.refreshToken = refreshToken;
+    await user.save({ validateBeforeSave: false });
+
+    return { accessToken, refreshToken };
+  } catch (error) {
+    throw new ApiError(500, "Something went wrong generating access");
+  }
+};
+
 const resisterUser = asyncHandler(async (req, res) => {
   const { userName, fullName, email, password } = req.body;
 
@@ -20,9 +35,8 @@ const resisterUser = asyncHandler(async (req, res) => {
   });
 
   if (existeduser) {
-    throw new ApiError(409, "User already exist");
+    throw new ApiError(409, "User already exists.");
   }
-
   const avatarLocalPath = req.files?.avatar[0]?.path;
   const coverImageLocalPath = req.files?.coverImage[0]?.path;
 
@@ -59,4 +73,51 @@ const resisterUser = asyncHandler(async (req, res) => {
     .json(new ApiResponse(201, createdUser, "User registered successfully"));
 });
 
-export { resisterUser };
+const loginUser = asyncHandler(async (req, res) => {
+  const { userName, email, password } = req.body;
+
+  if (!userName || !email) {
+    throw new ApiError(400, "User name or email is required !");
+  }
+
+  const user = User.findOne({
+    $or: [{ userName }, { email }],
+  });
+
+  if (!user) {
+    throw new ApiError(404, "User not found");
+  }
+
+  const isPasswordValid = await user.isPasswordCorrect(password);
+
+  if (!isPasswordValid) {
+    throw new ApiError(404, "Invalid credentials");
+  }
+
+  const { refreshToken, accessToken } = generateAccesssAndRefreshTokens(
+    user._id
+  );
+
+  const loggedInUser = await User.findById(user._id).select(
+    "-password -refreshToken"
+  );
+
+  const options = {
+    httpsOnly: true,
+    secure: true,
+  };
+
+  return res
+    .cookie("refreshToken", refreshToken, options)
+    .cookie("accessToken", accessToken, options)
+    .json(
+      {
+        user: loggedInUser,
+        refreshToken,
+        accessToken,
+      },
+      "User loggedin successfully"
+    );
+});
+
+export { resisterUser, loginUser };
